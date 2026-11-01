@@ -1,6 +1,6 @@
 # PR Roundup
 
-Herdr's default window, with your pull requests where you work. Each space shows the open PRs of its repository under it: CI state, open review threads (AI reviewers marked), and the changed source files. From a PR you start an agent in its worktree, open the source-only diff in a pane, open the worktree in an IDE, or go to the PR on GitHub. PRs of repositories that no space is in wait in a folded "Other PRs" group. Made for reviewing PRs that agents wrote.
+Herdr's default window, with your pull requests where you work. Each space shows the open PRs of its repository under it: CI state, open review threads (AI reviewers marked), and the changed source files. From a PR you start an agent in its worktree, open the source-only diff in a pane, open the worktree in an IDE, or go to the PR on GitHub. PRs of repositories that no space is in wait in a folded "Other PRs" group. Made to follow your PRs, their CI, and the agents that work on them.
 
 ![PR Roundup](preview.png)
 
