@@ -73,15 +73,14 @@ function shape(p) {
   };
 }
 
-// Needs attention first: a red CI or open comments, then running, then green; newest first.
-const weight = (p) => (p.ci.state === "failed" || p.threads.length ? 3 : RANK[p.ci.state]);
-const byNeed = (a, b) => weight(b) - weight(a) || b.updatedAt.localeCompare(a.updatedAt);
+// Highest PR number first: a stable order that does not move on each push or comment.
+const byNumber = (a, b) => b.number - a.number;
 
 // `search`: "author:@me" or "repo:owner/name".
 export async function fetchPrs(search) {
   const r = await exec("gh", ["api", "graphql", "-f", `query=${query(search)}`]);
   if (r.code !== 0) throw new Error(r.stderr.trim().split("\n")[0] || `gh exited with ${r.code}`);
-  return JSON.parse(r.stdout).data.search.nodes.filter((p) => p.number).map(shape).sort(byNeed);
+  return JSON.parse(r.stdout).data.search.nodes.filter((p) => p.number).map(shape).sort(byNumber);
 }
 
 // A repo (its .git folder, on that machine: null here) -> "owner/name" on GitHub, or null.

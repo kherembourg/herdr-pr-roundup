@@ -20,7 +20,7 @@ Needs the GitHub CLI, logged in (`gh auth login`).
 
 Each space in a GitHub clone shows a CI dot and the number of your open PRs there. Click the space: its PRs open under it. Click it again to fold them. One space shows its PRs at a time.
 
-Each PR row shows its CI dot, its title, and pills: `conflict`, `draft`, `✓` (approved), `N AI` (open review threads, AI reviewers marked), `→ space` (a pane is on its branch), and its number. Failed CI and open threads come first.
+Each PR row shows its CI dot, its title, and pills: `conflict`, `draft`, `✓` (approved), `N AI` (open review threads, AI reviewers marked), `→ space` (a pane is on its branch), and its number. The highest PR number comes first.
 
 Click a PR to see its details card:
 
