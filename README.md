@@ -35,7 +35,7 @@ Click a PR to see its details card:
 
 <img src="docs/agent-menu.png" width="264" align="right" alt="The agent menu open under the Agent button">
 
-**Agent** starts your default agent in a new tab `PR #n`, in a worktree on the PR's branch. Its first message gives the PR's link and branch and asks it to read the CI and the open comments, summarize them, and wait for your instructions.
+**Agent** starts your default agent in a new tab `PR #n`, in a worktree on the PR's branch. Its first message gives the PR's link and branch and asks it to rebase the branch on the PR's base branch, resolve the conflicts and push, then fix the failed CI, then fix or reply to each open review comment, and push.
 
 `▾` opens the installed agents right under the button. Your pick starts and becomes the one-click default.
 

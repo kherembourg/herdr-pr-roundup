@@ -174,7 +174,9 @@ export class PrRows {
         const task = [
           `Work on my pull request ${pr.url} (branch ${pr.headRefName}).`,
           folder ? "You are in its worktree." : "Check this branch out in a git worktree first.",
-          "Read its CI state and open review comments, give me a short summary, then wait for my instructions. Ask me before you push.",
+          `Rebase the branch on ${pr.baseRefName}, resolve the conflicts and push (--force-with-lease).`,
+          "Monitor the CI and fix each failure, then push.",
+          "Read the open review comments: fix each one or push back with a reply, then push.",
         ].join(" ");
         run("tab.new", { name: `PR #${pr.number}`, argv: a.run, task, ...(folder ? { folder } : {}), ...(space ? { space } : {}) });
       } catch (e) {
