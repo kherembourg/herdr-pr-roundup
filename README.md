@@ -80,7 +80,7 @@ Your PRs in repositories that no space is in go to **Other PRs**, at the end of 
 
 <img src="docs/agents.png" width="264" align="right" alt="An agent row with its PR number, CI dot and comment count">
 
-In the agents list, an agent whose pane is on a PR's branch shows the PR's CI dot, its number, and the number of open review threads. Hover it for the repository and the CI state.
+In the agents list, an agent whose pane is on a PR's branch shows the PR's CI dot, its number, and the number of open review threads. Hover it for the repository and the CI state. Click it to open the PR on GitHub.
 
 <br clear="right">
 

@@ -350,7 +350,13 @@ export default class Agents extends View {
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(Boolean(pr), el => el.child(h_flex().id(`ag-pr-${a.address}`).flex_none().gap(4).items_center().text_size(11).text_color(t.dim)
-          .tooltip(`${pr.repo}#${pr.number} · CI ${{ failed: "failed", running: "running", ok: "passed", none: "none" }[pr.ci]}${pr.threads ? ` · ${pr.threads} open comments` : ""}`)
+          .px(3).rounded(4).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+          // The badge opens the PR; the rest of the row still focuses the pane.
+          .when(Boolean(pr.url), el => el.on_click((_e, cx) => {
+            cx.stop_propagation();
+            cx.open_url(pr.url);
+          }))
+          .tooltip(`${pr.repo}#${pr.number} · CI ${{ failed: "failed", running: "running", ok: "passed", none: "none" }[pr.ci]}${pr.threads ? ` · ${pr.threads} open comments` : ""} · Click to open on GitHub`)
           .child(div().size(6).flex_none().rounded_full().bg({ failed: t.ansi1, running: t.ansi3, ok: t.ansi2, none: t.dim }[pr.ci]))
           .child(`#${pr.number}`)
           .when(pr.threads > 0, el => el.child(div().text_color(t.ansi5).child(String(pr.threads))))))
