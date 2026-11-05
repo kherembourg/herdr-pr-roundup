@@ -6,11 +6,16 @@ A [Herdr](https://herdr.dev) layout that puts your open pull requests under the 
 
 ## Install
 
-Ask your agent in Herdr: "add the layout github.com/kherembourg/herdr-pr-roundup". Or copy `layouts/pr-roundup.json` to `~/.config/herdr-app/layouts/` and the three folders in `mods/` to `~/.config/herdr-app/mods/`, then switch to it with `Ctrl+Shift+L`.
+Ask your agent in Herdr: "add the layout github.com/kherembourg/herdr-pr-roundup". Or copy `layouts/pr-roundup.json` to `~/.config/herdr-app/layouts/` and the six folders in `mods/` to `~/.config/herdr-app/mods/`, then switch to it with `Ctrl+Shift+L`.
 
 Needs the GitHub CLI, logged in (`gh auth login`).
 
-**What it runs:** the mods call GitHub through `gh`, run `git` in your clones (and on your other machines for their spaces), create git worktrees when you ask for an agent or an IDE, and start the agent or IDE you pick.
+The panel sections need more tools:
+
+- **Cost**: `bun` and `python3`.
+- **Linear**: `jq` and `curl`, and a Linear API key (see [Linear](#linear)).
+
+**What it runs:** the mods call GitHub through `gh`, call the Linear API through `curl`, read your usage through `bunx ccusage@latest`, run `git` in your clones (and on your other machines for their spaces), create git worktrees when you ask for an agent or an IDE, and start the agent or IDE you pick.
 
 ## Features
 
@@ -84,12 +89,67 @@ In the agents list, an agent whose pane is on a PR's branch shows the PR's CI do
 
 <br clear="right">
 
+### The panel menu
+
+The top bar has one dropdown button at the right, in place of the Files and Changes buttons. Its name is the open panel section with its badge, for example `PRs 3 / 12 ▼`. When no section is open, it shows `Files`. A small red dot shows when another section has a warning.
+
+Click the button to open the menu: **Files**, **Changes**, **Cost**, **PRs** and **Linear**, each with its badge. `↑` and `↓` move, `Enter` opens, `Esc` closes. A pick shows that section in the right panel.
+
+**Linear** shows only when a Linear tool is installed:
+
+- the `linear` CLI is on the `PATH`,
+- the Linear plugin of Claude Code is installed,
+- a Linear MCP server is set in Codex, or
+- `claude mcp get linear` succeeds.
+
+Without a Linear tool, the menu hides Linear.
+
+### Cost
+
+The **Cost** section reads your Claude Code, Codex and pi usage through `bunx ccusage@latest`. It shows:
+
+- today's cost, its trend against the 7-day average, and the cost of yesterday and of the month;
+- a bar split by agent (Claude, Codex, pi);
+- the current 5 hour block: its cost, the burn per hour, the projection and the time left;
+- a 14-day bar chart, stacked by agent. Hover a bar for its numbers;
+- the models of today;
+- the cost by project: the Claude cost of today, plus the full cost of the Codex sessions active today;
+- the top sessions of today. Click a session to focus its agent when a live pane has the same title.
+
+The badge is today's cost. The section refreshes every 60 seconds.
+
+### PRs panel
+
+The **PRs** section lists your PRs and the reviews asked of you, grouped by repository. Each row is the same PR row as in the left sidebar: click it for its details card, with the **Agent**, **Source diff**, **IDE** and **GitHub** buttons. A tag over a row (`CI`, `changes` or `review`) shows why the PR needs action.
+
+Three filter chips narrow the list:
+
+- **Author**: me, review requested, all, or one login.
+- **Repo**: the local clones found from the folders of your spaces and their parent folders, and the repositories of the loaded PRs. Pick a repository to load all its open PRs.
+- **Show**: all, or only the PRs that need action.
+
+The badge is `needs action / total`. The section refreshes every 2 minutes.
+
+### Linear
+
+The **Linear** section lists the started issues (In Progress and In Review) of the teams you are a member of, grouped by state. Click an issue to open it in Linear. Three filter chips narrow the list: **Assignee** (`me` at first), **Project** and **Initiative**. Each chip value shows its count.
+
+The section needs a Linear personal API key. Set the environment variable `LINEAR_API_KEY`, or add the key to the macOS keychain:
+
+```sh
+security add-generic-password -a "$USER" -s herdr-linear -w
+```
+
+Without a key, the section shows this setup line. To keep one team only, put its team key (such as `ENG`) in a file `mods/pr-roundup-ops/sources/linear-team`.
+
+The badge is the number of issues after the filters. The section refreshes every 5 minutes.
+
 ## More
 
-- Your PRs refresh every 2 minutes.
+- Your PRs refresh every 2 minutes. The panel sections refresh at their own rate (Cost 60 seconds, PRs 2 minutes, Linear 5 minutes).
 - A space on another machine gets the PRs of its repository there.
 - How it is built, and how to rebuild it: [RECIPE.md](RECIPE.md).
 
 ## License
 
-Apache-2.0, as Herdr. `mods/pr-roundup-spaces`, `mods/pr-roundup-agents` and `mods/pr-roundup-pane` are modified copies of Herdr's `spaces`, `agents` and `pane` mods (Herdr 0.1.11, [herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)); the changes add the PR lists, the diff pane, the PR on agent rows and the diff pane titles.
+Apache-2.0, as Herdr. `mods/pr-roundup-spaces`, `mods/pr-roundup-agents` and `mods/pr-roundup-pane` are modified copies of Herdr's `spaces`, `agents` and `pane` mods (Herdr 0.1.11, [herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)); the changes add the PR lists, the diff pane, the PR on agent rows and the diff pane titles. `mods/pr-roundup-tabs` is a modified copy of Herdr's `tabs` mod (0.1.12); the change replaces the Files and Changes buttons with the panel dropdown.
