@@ -79,7 +79,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "tabs"
+            "mod": "pr-roundup-tabs"
           },
           "size": {
             "px": 42
@@ -139,6 +139,36 @@
                       "type": "block",
                       "content": {
                         "mod": "changes"
+                      }
+                    },
+                    {
+                      "id": "cost",
+                      "type": "block",
+                      "content": {
+                        "mod": "pr-roundup-ops",
+                        "props": {
+                          "section": "cost"
+                        }
+                      }
+                    },
+                    {
+                      "id": "prs",
+                      "type": "block",
+                      "content": {
+                        "mod": "pr-roundup-ops",
+                        "props": {
+                          "section": "prs"
+                        }
+                      }
+                    },
+                    {
+                      "id": "linear",
+                      "type": "block",
+                      "content": {
+                        "mod": "pr-roundup-ops",
+                        "props": {
+                          "section": "linear"
+                        }
                       }
                     }
                   ],
