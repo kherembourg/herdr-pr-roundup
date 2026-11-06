@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1 (2026-11-06)
+
+### Fix
+
+- **Close the side panel.** Each panel section (Files, Changes, Cost, PRs, Linear) has a `✕` at the right of its header. Before, the panel had no close button. Files and Changes now use the new mods `pr-roundup-files` and `pr-roundup-changes`, copies of Herdr's `files` and `changes` with that button.
+
 ## v0.4.0 (2026-11-05)
 
 ### New

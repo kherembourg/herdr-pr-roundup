@@ -6,7 +6,7 @@ A [Herdr](https://herdr.dev) layout that puts your open pull requests under the 
 
 ## Install
 
-Ask your agent in Herdr: "add the layout github.com/kherembourg/herdr-pr-roundup". Or copy `layouts/pr-roundup.json` to `~/.config/herdr-app/layouts/` and the six folders in `mods/` to `~/.config/herdr-app/mods/`, then switch to it with `Ctrl+Shift+L`.
+Ask your agent in Herdr: "add the layout github.com/kherembourg/herdr-pr-roundup". Or copy `layouts/pr-roundup.json` to `~/.config/herdr-app/layouts/` and the eight folders in `mods/` to `~/.config/herdr-app/mods/`, then switch to it with `Ctrl+Shift+L`.
 
 Needs the GitHub CLI, logged in (`gh auth login`).
 
@@ -93,7 +93,7 @@ In the agents list, an agent whose pane is on a PR's branch shows the PR's CI do
 
 The top bar has one dropdown button at the right, in place of the Files and Changes buttons. Its name is the open panel section with its badge, for example `PRs 3 / 12 ▼`. When no section is open, it shows `Files`. A small red dot shows when another section has a warning.
 
-Click the button to open the menu: **Files**, **Changes**, **Cost**, **PRs** and **Linear**, each with its badge. `↑` and `↓` move, `Enter` opens, `Esc` closes. A pick shows that section in the right panel.
+Click the button to open the menu: **Files**, **Changes**, **Cost**, **PRs** and **Linear**, each with its badge. `↑` and `↓` move, `Enter` opens, `Esc` closes. A pick shows that section in the right panel. The `✕` at the right of each section's header closes the panel.
 
 **Linear** shows only when a Linear tool is installed:
 
@@ -152,4 +152,4 @@ The badge is the number of issues after the filters. The section refreshes every
 
 ## License
 
-Apache-2.0, as Herdr. `mods/pr-roundup-spaces`, `mods/pr-roundup-agents` and `mods/pr-roundup-pane` are modified copies of Herdr's `spaces`, `agents` and `pane` mods (Herdr 0.1.11, [herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)); the changes add the PR lists, the diff pane, the PR on agent rows and the diff pane titles. `mods/pr-roundup-tabs` is a modified copy of Herdr's `tabs` mod (0.1.12); the change replaces the Files and Changes buttons with the panel dropdown.
+Apache-2.0, as Herdr. `mods/pr-roundup-spaces`, `mods/pr-roundup-agents` and `mods/pr-roundup-pane` are modified copies of Herdr's `spaces`, `agents` and `pane` mods (Herdr 0.1.11, [herdrdev/herdr-app](https://github.com/herdrdev/herdr-app)); the changes add the PR lists, the diff pane, the PR on agent rows and the diff pane titles. `mods/pr-roundup-tabs` is a modified copy of Herdr's `tabs` mod (0.1.12); the change replaces the Files and Changes buttons with the panel dropdown. `mods/pr-roundup-files` and `mods/pr-roundup-changes` are modified copies of Herdr's `files` and `changes` mods (0.1.13); the change adds the `✕` that closes the panel.

@@ -47,7 +47,8 @@ Herdr's default window, with your pull requests where you work. Each space shows
 
 ## Built from
 
-- `layouts/pr-roundup.json`: a clone of Herdr's `main` layout (0.1.11). Tree: `root` row → `sidebar` column (`brand` block `workspace-chrome`; `sidebar-lists` column with `spaces` block `pr-roundup-spaces` weight 2 and `agents` block `pr-roundup-agents` weight 1; `sidebar-footer` block `workspace-chrome {footer: true}`) and `work` column (`tabs` block `pr-roundup-tabs`; `work-body` row with `main` block `{tab: "active"}` and the hidden `panel` stack (`panel-body`) of `files`, `changes` and the blocks `cost`, `prs` and `linear`, each `pr-roundup-ops {section: "cost" | "prs" | "linear"}`; `status` block `workspace-status`). The `main` block's pane header is `{content: {mod: "pr-roundup-pane"}, height: 30, position: "top", reveal: "always"}`, `lone: true`.
+- `layouts/pr-roundup.json`: a clone of Herdr's `main` layout (0.1.11). Tree: `root` row → `sidebar` column (`brand` block `workspace-chrome`; `sidebar-lists` column with `spaces` block `pr-roundup-spaces` weight 2 and `agents` block `pr-roundup-agents` weight 1; `sidebar-footer` block `workspace-chrome {footer: true}`) and `work` column (`tabs` block `pr-roundup-tabs`; `work-body` row with `main` block `{tab: "active"}` and the hidden `panel` stack (`panel-body`) of `files` (`pr-roundup-files`), `changes` (`pr-roundup-changes`) and the blocks `cost`, `prs` and `linear`, each `pr-roundup-ops {section: "cost" | "prs" | "linear"}`; `status` block `workspace-status`). The `main` block's pane header is `{content: {mod: "pr-roundup-pane"}, height: 30, position: "top", reveal: "always"}`, `lone: true`.
+- `mods/pr-roundup-files/` and `mods/pr-roundup-changes/` (clones of Herdr's `files` and `changes` 0.1.13): a 20px `✕` at the right of the header runs `layout.hide {id: "panel"}`. `pr-roundup-ops` has the same `✕` in its section header.
 - `mods/pr-roundup-spaces/` (a clone of Herdr's `spaces` 0.1.11):
   - `main.js`: the spaces list; the git look that gives each space its repository also runs `git remote get-url origin` (with `exec(..., { on: machine })`). Holds the PR lists, the filter, Other PRs, and finds local clones (the repos of the spaces, then the folders beside them). Opened with `props.diff` it is the diff pane instead.
   - `prs.js`: one GraphQL query through `gh api graphql` (`search(query: "<author:@me | repo:owner/name> is:pr is:open archived:false", first: 100)` with checks, review threads and files), the CI and thread rules, the rows, the details card, the Agent button (`knownAgents()`, `run("tab.new", {name, space, folder, argv, task})`).
@@ -71,11 +72,11 @@ Herdr's default window, with your pull requests where you work. Each space shows
 - Worktrees are created by the Agent and IDE buttons; nothing removes them (nor the base copies in `~/.herdr/pr-review`).
 - `zed --diff` must come before the folder (`zed --diff a b folder`): after it, Zed takes `--diff` for a file name. With two folders Zed shows one multi-diff view, but it doesn't follow symlinks, and a copy as the right side would lose your edits: hence one pair per file.
 - The agents list matches a PR by branch name only: two repositories with a PR on the same branch name show the newest one.
-- The four cloned mods (`spaces`, `agents`, `pane`, `tabs`) are copies: they don't get Herdr's later changes. `pr-roundup-menu` and `pr-roundup-ops` are new.
+- The six cloned mods (`spaces`, `agents`, `pane`, `tabs`, `files`, `changes`) are copies: they don't get Herdr's later changes. `pr-roundup-menu` and `pr-roundup-ops` are new.
 
 ## Done when
 
-- `herdr-app check` passes for the six mods, and `layout.switch {name: "pr-roundup"}` shows the window with no errors in `herdr-app status`.
+- `herdr-app check` passes for the eight mods, and `layout.switch {name: "pr-roundup"}` shows the window with no errors in `herdr-app status`.
 - A space in a GitHub clone shows a dot, a count and a chevron; clicking it lists your open PRs there, and clicking it again folds them. `author:me ✕` lists every author's, with logins; `Reset` goes back.
 - A PR with a failed check shows a red dot and the check's name in its details; one with an unresolved Greptile comment shows `1 AI` and the comment's first line.
 - `Agent: …` opens a `PR #n` tab in that space, in a worktree on the PR's branch, with the agent running and the first message sent; `▾` lists the installed agents and a pick becomes the new label.

@@ -1,4 +1,4 @@
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, theme, shared, setShared, appHome, props, home, spaces, agents, run } from "herdr";
 import { reasons, mergePrs } from "./filter.js";
@@ -337,7 +337,13 @@ export default class Ops extends View {
         .when(!props()?.section, (e) => e.child(div().w(10).text_size(10).text_color(t.dim).child(closed ? "▸" : "▾")))
         .child(div().font_semibold().text_size(12).child(s.title))
         .child(div().flex_1())
-        .child(div().text_size(11).text_color(d.warn ? t.blocked : t.muted).child(d.summary ?? (d.loading ? "…" : ""))))
+        .child(div().text_size(11).text_color(d.warn ? t.blocked : t.muted).child(d.summary ?? (d.loading ? "…" : "")))
+        // In a panel tab, ✕ closes the side panel.
+        .when(Boolean(props()?.section), (e) => e.child(div().id(`ops-close-${s.id}`).size(20).flex_none().flex().items_center().justify_center()
+          .rounded(5).text_color(t.dim).hover((h) => h.bg(t.hover).text_color(t.foreground))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => { cx.stop_propagation(); run("layout.hide", { id: "panel" }); })
+          .child(svg("mods/pane/close.svg").size(12)))))
       .when(!closed, (e) => e
         .when(Boolean(d.error), (e) => e.child(div().px(12).py(4).text_size(11).text_color(d.setup ? t.blocked : t.ansi1).child(d.error)))
         .children(custom ?? rows.map((r, i) => this.row(r, i, s.id, t)))
