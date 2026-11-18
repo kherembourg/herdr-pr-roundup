@@ -1,21 +1,36 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { exec, theme, shared, setShared, appHome, props, home, spaces, agents, run } from "herdr";
+import { exec, theme, shared, setShared, appHome, props, home, spaces, panes, agents, run, layout, window } from "herdr";
 import { reasons, mergePrs } from "./filter.js";
-// The left sidebar's PR rows: same details and Agent / Source diff / IDE / GitHub buttons.
-import { PrRows, fetchPrs, findClones } from "./prs.js";
+import { PrRows, findClones } from "./prs.js";
+import { PrDiff } from "./diff.js";
+import { fetchPrLists } from "./github.js";
+import { resolveSpaceRepo } from "./routing.js";
 
-let login = null; // my GitHub login, asked once
-async function myLogin() {
-  if (!login) login = (await exec("gh", ["api", "user", "-q", ".login"])).stdout.trim() || null;
-  return login;
+const PR_REFRESH_MS = 300000;
+
+function findBlock(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = findBlock(child, id);
+    if (found) return found;
+  }
+  return null;
 }
 
-// Where to look for clones: each local space's folder and its parent (a space in ~/code/app also finds ~/code/api).
+function prPanelVisible() {
+  const root = layout();
+  const panel = findBlock(root, "panel");
+  return panel && !panel.hidden && findBlock(panel, "panel-body")?.active === "prs";
+}
+
 function cloneRoots() {
   const dirs = spaces().filter((sp) => sp.folder && !sp.machine).map((sp) => sp.folder.replace(/\/$/, ""));
   return [...new Set(dirs.flatMap((d) => [d, d.slice(0, d.lastIndexOf("/"))]).filter((d) => d && d !== home()))];
 }
+
+const sameRepo = (a, b) => a?.toLowerCase() === b?.toLowerCase();
+const prKey = (pr) => `${pr.repo.toLowerCase()}#${pr.number}`;
 
 const money = (n) => `$${(n ?? 0).toFixed(n >= 100 ? 0 : 2)}`;
 const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -25,16 +40,7 @@ const open = (url) => exec("open", [url]).catch(() => {});
 const SECTIONS = [
   { id: "cost", title: "Cost", every: 60000, script: "cost.py", run: "python3", filtered: "cost",
     parse: (d) => ({ raw: d, summary: `$${Math.round(d.today)}`, rows: [] }) },
-  { id: "prs", title: "PRs", every: 120000, filtered: "prs", load: async (view) => {
-    // Mine and the reviews asked of me; with a repo picked, all of its open PRs too.
-    // shortcut: no org-wide search (100 PRs with files and checks gets HTTP 502 from GitHub); "all authors" needs a repo.
-    const repo = view.prFilter().repo;
-    // Spaces open after start bring their clones (for the Agent and IDE buttons).
-    findClones(cloneRoots()).then((c) => { view.prRows.clones = { ...c, ...view.prRows.clones }; }).catch(() => {});
-    const [me, mine, review, inRepo] = await Promise.all([myLogin(), fetchPrs("author:@me"), fetchPrs("review-requested:@me"),
-      repo ? fetchPrs(`repo:${repo}`) : []]);
-    return { raw: { me, repo, prs: mergePrs([mine, inRepo], review) }, rows: [] };
-  } },
+  { id: "prs", title: "PRs", filtered: "prs" },
   { id: "linear", title: "Linear", every: 300000, script: "linear.sh", parse: (d) => ({ raw: d, rows: [] }),
     // Rows depend on the filters, so they are built at render time (see linearRows).
     filtered: true },
@@ -45,19 +51,118 @@ export default class Ops extends View {
   sections() { const id = props()?.section; return id ? SECTIONS.filter((s) => s.id === id) : SECTIONS; }
 
   init(_props, cx) {
+    const diff = props()?.diff;
+    if (diff) {
+      this.diff = new PrDiff(diff);
+      this.diff.claimTitle();
+      this.diff.load(cx);
+      return;
+    }
     this.data = {};
     this.local = {};
     if (this.sections().some((s) => s.id === "prs")) {
       this.prRows = new PrRows();
-      this.prRows.loadTools(cx);
-      // The space whose folder is the repo's clone gets the agent's tab.
-      this.prRows.spaceOf = (gh) => spaces().find((sp) => sp.folder && sp.folder === this.prRows.clones[gh])?.id ?? null;
-      cx.spawn(async (cx) => { this.prRows.clones = await findClones(cloneRoots()); cx.notify(); });
+      this.prCache = new Map();
+      cx.timer.every(30000, (cx) => {
+        if (window()?.active) this.syncPrPanel(cx);
+      });
     }
     for (const s of this.sections()) {
+      if (s.id === "prs") continue;
       this.refresh(s, cx);
       cx.timer.every(s.every, (cx) => this.refresh(s, cx));
     }
+  }
+
+  syncPrPanel(cx) {
+    if (!this.prRows || !prPanelVisible()) return;
+    const space = spaces().find((space) => space.active);
+    const tabs = new Set(space?.tabs.map((tab) => tab.id) ?? []);
+    const activeTab = space?.tabs.find((tab) => tab.active)?.id;
+    const terminals = panes().filter((pane) => tabs.has(pane.tab) && pane.cwd);
+    const dirs = [...new Set(terminals.map((pane) => pane.cwd))].sort();
+    const focusedDir = terminals.find((pane) => pane.tab === activeTab && pane.focused)?.cwd;
+    const key = JSON.stringify([space?.id, space?.machine, space?.folder, activeTab, focusedDir, dirs, shared("ops.prs.open")]);
+    if (this.prContext?.key !== key) {
+      const context = this.prContext = { key, space, repo: undefined };
+      this.prRows.location = null;
+      this.prRows.expanded = null;
+      if (this.toolsMachine !== (space?.machine ?? null)) {
+        this.toolsMachine = space?.machine ?? null;
+        this.prRows.loadTools(cx, this.toolsMachine);
+      }
+      this.prRepo = undefined;
+      this.prRetryAt = 0;
+      this.data.prs = { loading: true };
+      cx.spawn(async (cx) => {
+        const where = space ? await resolveSpaceRepo(space).catch(() => null) : null;
+        if (this.prContext !== context) return;
+        context.repo = where?.repo ?? null;
+        this.prRows.location = where;
+        this.prRows.spaceId = space?.id;
+        this.loadPrs(cx);
+        cx.notify();
+      });
+      if (!this.scannedClones) {
+        this.scannedClones = true;
+        cx.spawn(async (cx) => {
+          this.prRows.clones = await findClones(cloneRoots()).catch(() => ({}));
+          cx.notify();
+        });
+      }
+      return;
+    }
+    this.loadPrs(cx);
+  }
+
+  loadPrs(cx, force = false) {
+    const context = this.prContext;
+    if (!context || context.repo === undefined || this.prLoading || !prPanelVisible()) return;
+    const repo = this.prFilter().repo;
+    const scopes = { mine: "author:@me", review: "review-requested:@me" };
+    if (repo) scopes.repo = `repo:${repo.toLowerCase()}`;
+    const now = Date.now();
+    const due = Object.fromEntries(Object.entries(scopes).filter(([, scope]) =>
+      force || (this.prCache.get(scope)?.until ?? 0) <= now));
+    const publish = (error = null) => {
+      if (this.prContext !== context || this.prFilter().repo !== repo) return;
+      const rows = Object.fromEntries(Object.entries(scopes).map(([name, scope]) =>
+        [name, this.prCache.get(scope)?.rows]));
+      const ready = Boolean(rows.mine && rows.review && (!repo || rows.repo));
+      this.data.prs = {
+        ...this.data.prs,
+        loading: false,
+        error,
+        raw: ready ? {
+          repo,
+          mine: new Set(rows.mine.map(prKey)),
+          prs: mergePrs([rows.mine, rows.repo ?? []], rows.review),
+        } : undefined,
+      };
+    };
+    if (!Object.keys(due).length) {
+      if (this.data.prs?.raw?.repo !== repo) publish();
+      return;
+    }
+    if (!force && now < (this.prRetryAt ?? 0)) return;
+
+    this.prLoading = true;
+    this.data.prs = { ...this.data.prs, loading: true };
+    cx.spawn(async (cx) => {
+      try {
+        const result = await fetchPrLists(due);
+        for (const [name, scope] of Object.entries(due)) {
+          this.prCache.set(scope, { rows: result[name], until: Date.now() + PR_REFRESH_MS });
+        }
+        publish();
+      } catch (e) {
+        if (this.prContext === context && this.prFilter().repo === repo) this.prRetryAt = Date.now() + 60000;
+        publish(String(e.message ?? e));
+      } finally {
+        this.prLoading = false;
+        cx.notify();
+      }
+    });
   }
 
   refresh(s, cx) {
@@ -66,9 +171,8 @@ export default class Ops extends View {
     cx.spawn(async (cx) => {
       const next = {};
       try {
-        const r = s.load ? { code: 0, data: await s.load(this) } : await exec(s.run ?? "sh", [...(s.run === "python3" ? ["-I"] : []), `${appHome()}/mods/pr-roundup-ops/sources/${s.script}`]);
-        if (r.data) Object.assign(next, r.data);
-        else if (r.code !== 0) {
+        const r = await exec(s.run ?? "sh", [...(s.run === "python3" ? ["-I"] : []), `${appHome()}/mods/pr-roundup-ops/sources/${s.script}`]);
+        if (r.code !== 0) {
           next.error = (r.stderr.trim().split("\n")[0] || `exit ${r.code}`);
           next.setup = r.code === 2;
         } else Object.assign(next, s.parse(JSON.parse(r.stdout)));
@@ -215,22 +319,32 @@ export default class Ops extends View {
     return out;
   }
 
-  prFilter() { return shared("ops.prs.filter") ?? this.pfLocal ?? { author: "me" }; }
+  prFilter() {
+    const saved = shared("ops.prs.filter") ?? {};
+    return { author: saved.author ?? null, show: saved.show ?? null,
+      repo: this.prRepo === undefined ? this.prContext?.repo ?? null : this.prRepo };
+  }
+
   setPrFilter(f, cx) {
     const reload = f.repo !== this.prFilter().repo;
-    this.pfLocal = f; setShared("ops.prs.filter", f);
-    if (reload) this.refresh(SECTIONS.find((s) => s.id === "prs"), cx);
+    this.prRepo = f.repo;
+    setShared("ops.prs.filter", { author: f.author, show: f.show });
+    if (reload) {
+      this.prRetryAt = 0;
+      this.prRows.expanded = null;
+      this.loadPrs(cx);
+    }
   }
 
   prsView(d, t) {
-    const raw = d.raw; if (!raw || !this.prRows) return null;
+    if (!this.prRows) return null;
     const f = this.prFilter();
+    const raw = d.raw?.repo === f.repo ? d.raw : { repo: f.repo, mine: new Set(), prs: [] };
     // The repo's name, without the owner and without an owner prefix ("acme/acme-ios" -> "ios").
     const short2 = (repo) => { const [o, n] = repo.split("/"); return n.replace(new RegExp(`^${o.replace(/[^\w]/g, "")}[-_]`, "i"), "") || n; };
-    const authorOk = (p) => !f.author || (f.author === "me" ? p.author?.login === raw.me : f.author === "review" ? p.reviewRequested : p.author?.login === f.author);
-    const keep = (p, skip) => (skip === "author" || authorOk(p)) && (skip === "repo" || !f.repo || p.repo === f.repo)
+    const authorOk = (p) => !f.author || (f.author === "me" ? raw.mine.has(prKey(p)) : f.author === "review" ? p.reviewRequested : p.author?.login === f.author);
+    const keep = (p, skip) => (skip === "author" || authorOk(p)) && (skip === "repo" || !f.repo || sameRepo(p.repo, f.repo))
       && (skip === "show" || f.show !== "action" || reasons(p).length > 0);
-    if (f.repo && raw.repo !== f.repo) return [...this.filterBar(t, "prs", [["repo", "Repo", short2(f.repo)]], f, (x, cx) => this.setPrFilter(x, cx), () => []), this.row({ label: "Loading…" }, 0, "prs", t)];
     const prs = raw.prs.filter((p) => keep(p));
     const need = prs.filter((p) => reasons(p).length).length;
     d.summary = f.show === "action" ? String(prs.length) : `${need} / ${prs.length}`;
@@ -240,19 +354,28 @@ export default class Ops extends View {
     const count = (k, test) => raw.prs.filter((p) => keep(p, k) && test(p)).length;
     const values = (k) => {
       const pool = raw.prs.filter((p) => keep(p, k));
-      if (k === "author") return [[null, "All"], ["me", "me", count(k, (p) => p.author?.login === raw.me)], ["review", "review requested", count(k, (p) => p.reviewRequested)],
-        ...[...new Set(pool.map((p) => p.author?.login).filter((a) => a && a !== raw.me))].sort().map((a) => [a, a, count(k, (p) => p.author?.login === a)])];
+      if (k === "author") return [[null, "All"], ["me", "me", count(k, (p) => raw.mine.has(prKey(p)))], ["review", "review requested", count(k, (p) => p.reviewRequested)],
+        ...[...new Set(pool.map((p) => p.author?.login).filter((a) => a))].sort().map((a) => [a, a, count(k, (p) => p.author?.login === a)])];
       if (k === "repo") {
-        const repos = [...new Set([...Object.keys(this.prRows.clones), ...pool.map((p) => p.repo)])].sort((a, b) => short2(a).localeCompare(short2(b)));
+        const byName = new Map(Object.keys(this.prRows.clones).map((repo) => [repo, repo]));
+        for (const pr of pool) byName.set(pr.repo.toLowerCase(), pr.repo);
+        if (f.repo && !byName.has(f.repo.toLowerCase())) byName.set(f.repo.toLowerCase(), f.repo);
+        const repos = [...byName.values()].sort((a, b) => short2(a).localeCompare(short2(b)));
         // A repo not loaded yet has no count: picking it loads its PRs.
-        return [[null, "All"], ...repos.map((r) => [r, short2(r), r === raw.repo || pool.some((p) => p.repo === r) ? count(k, (p) => p.repo === r) : null])];
+        return [[null, "All"], ...repos.map((r) => [r, short2(r), sameRepo(r, raw.repo) || pool.some((p) => sameRepo(p.repo, r)) ? count(k, (p) => sameRepo(p.repo, r)) : null])];
       }
       return [[null, "All"], ["action", "needs action", count(k, (p) => reasons(p).length > 0)]];
     };
     const defs = [["author", "Author", f.author === "review" ? "review requested" : f.author ?? "all"],
       ["repo", "Repo", f.repo ? short2(f.repo) : "all"], ["show", "Show", f.show === "action" ? "needs action" : "all"]];
     const out = this.filterBar(t, "prs", defs, f, (x, cx) => this.setPrFilter(x, cx), values);
-    if (!prs.length) return [...out, this.row({ label: "No PR for these filters" }, 0, "prs", t)];
+    if (!prs.length) {
+      const label = d.loading ? "Loading…" : d.error ? null : "No PR for these filters";
+      return label ? [...out, this.row({ label }, 0, "prs", t)] : out;
+    }
+    if (prs.some((p) => p.ciKnown === false)) {
+      out.push(div().px(12).py(4).text_size(11).text_color(t.muted).child("Using REST. Open a PR for its CI checks and files."));
+    }
     // Grouped by repo; over each row, only the reasons its own pills don't show (conflict and threads they do).
     const sorted = [...prs].sort((a, b) => short2(a.repo).localeCompare(short2(b.repo)) || b.number - a.number);
     return [...out, ...sorted.flatMap((p, n) => {
@@ -338,6 +461,9 @@ export default class Ops extends View {
         .child(div().font_semibold().text_size(12).child(s.title))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(d.warn ? t.blocked : t.muted).child(d.summary ?? (d.loading ? "…" : "")))
+        .when(s.id === "prs", (e) => e.child(div().id("ops-refresh-prs").size(20).flex_none().flex().items_center().justify_center()
+          .rounded(5).text_color(t.dim).hover((h) => h.bg(t.hover).text_color(t.foreground)).tooltip("Refresh PRs")
+          .on_click((_e, cx) => { cx.stop_propagation(); this.loadPrs(cx, true); }).child("↻")))
         // In a panel tab, ✕ closes the side panel.
         .when(Boolean(props()?.section), (e) => e.child(div().id(`ops-close-${s.id}`).size(20).flex_none().flex().items_center().justify_center()
           .rounded(5).text_color(t.dim).hover((h) => h.bg(t.hover).text_color(t.foreground))
@@ -350,7 +476,11 @@ export default class Ops extends View {
         .when(!custom && !rows.length && !d.error, (e) => e.child(div().px(12).py(4).text_size(11).text_color(t.dim).child(d.loading ? "Loading…" : "Nothing"))));
   }
 
-  render(_cx) {
+  close() { this.diff?.releaseTitle(); }
+
+  render(cx) {
+    if (this.diff) return this.diff.render();
+    this.syncPrPanel(cx);
     const t = theme();
     return v_flex().id("ops-root").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background)
       .border_1().border_color(t.border).text_color(t.foreground).text_size(13)

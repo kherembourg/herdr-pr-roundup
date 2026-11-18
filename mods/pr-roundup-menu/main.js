@@ -3,7 +3,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, shared } from "herdr";
+import { run, props, closeOverlay, theme, shared, setShared } from "herdr";
 
 // Keep in sync with OPS in mods/pr-roundup-tabs/main.js (a mod cannot import from another).
 const OPS = [["files", "Files"], ["changes", "Changes"], ["cost", "Cost"], ["prs", "PRs"], ["linear", "Linear"]];
@@ -21,6 +21,7 @@ export default class OpsMenu extends View {
   choose(i) {
     const [id] = shown()[i];
     closeOverlay(props()?.overlay);
+    if (id === "prs") setShared("ops.prs.open", Date.now());
     run("layout.select", { stack: "panel-body", child: id });
     run("layout.show", { id: "panel" });
   }

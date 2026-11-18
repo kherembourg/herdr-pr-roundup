@@ -44,7 +44,7 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    // A mod pane can name itself in shared "pane.titles" (the pr-roundup-spaces PR diff: "#1878 Write saved files…").
+    // A mod pane can name itself in shared "pane.titles" (the PR diff: "#1878 Write saved files…").
     const own = p.mod ? shared("pane.titles")?.[p.pane] : null;
     const name = own || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);

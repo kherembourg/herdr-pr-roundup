@@ -1,5 +1,5 @@
-// Which PRs need Kevin, and why. Pure: no herdr imports, so a node script can test it.
-// A PR has the shape of pr-roundup-spaces/prs.js (ci.state, threads[]) plus reviewRequested.
+// Which PRs need action, and why. Pure: no herdr imports, so a node script can test it.
+// PRs come from github.js. Merging the lists adds reviewRequested.
 export function reasons(pr) {
   const r = [];
   if (pr.reviewRequested) r.push("review");
@@ -13,8 +13,14 @@ export function reasons(pr) {
 
 // One entry per PR from several searches; `review` is the list where a review is asked of me.
 export function mergePrs(lists, review) {
-  const asked = new Set(review.map((p) => `${p.repo}#${p.number}`));
+  const keyOf = (p) => `${p.repo.toLowerCase()}#${p.number}`;
+  const asked = new Set(review.map(keyOf));
   const seen = new Map();
-  for (const p of [...lists.flat(), ...review]) seen.set(`${p.repo}#${p.number}`, p);
-  return [...seen.values()].map((p) => ({ ...p, reviewRequested: asked.has(`${p.repo}#${p.number}`) })).sort((a, b) => b.number - a.number);
+  for (const p of [...lists.flat(), ...review]) {
+    const key = keyOf(p);
+    const prior = seen.get(key);
+    if (p.ciKnown === false && prior?.ciKnown === true && prior.updatedAt === p.updatedAt) continue;
+    seen.set(key, p);
+  }
+  return [...seen.values()].map((p) => ({ ...p, reviewRequested: asked.has(keyOf(p)) })).sort((a, b) => b.number - a.number);
 }

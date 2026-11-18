@@ -1,4 +1,3 @@
-// Copy of mods/pr-roundup-spaces/diff.js (a mod cannot import from another mod folder). Keep the two in sync.
 // A PR's diff in a pane, drawn like the shipped Changes panel: files on top, the picked file's diff below.
 
 import { div } from "gpui-kit";
@@ -87,7 +86,7 @@ export class PrDiff {
   claimTitle() {
     const id = focused()?.pane;
     const titles = shared("pane.titles") ?? {};
-    if (!id || titles[id] || panes().find((p) => p.pane === id)?.mod !== "pr-roundup-spaces") return;
+    if (!id || titles[id] || panes().find((p) => p.pane === id)?.mod !== "pr-roundup-ops") return;
     this.pane = id;
     setShared("pane.titles", { ...titles, [id]: `#${this.pr.number} ${this.pr.title ?? ""}` });
   }
@@ -105,7 +104,7 @@ export class PrDiff {
     if (!this.ides.length) cx.spawn(async (cx) => { this.ides = await findIdes(); cx.notify(); });
     cx.spawn(async (cx) => {
       try {
-        const r = await exec("gh", ["pr", "diff", String(this.pr.number), "-R", this.pr.repo, "--color=never"]);
+        const r = await exec("gh", ["api", `repos/${this.pr.repo}/pulls/${this.pr.number}`, "--hostname", "github.com", "-H", "Accept: application/vnd.github.diff"]);
         if (r.code !== 0) throw new Error(r.stderr.trim().split("\n")[0] || `gh exited with ${r.code}`);
         this.files = parseDiff(r.stdout);
         this.error = null;
@@ -222,7 +221,9 @@ export const preferred = (list, key) => list.find((x) => x.name === shared(key))
 const VSCODE = new Set(["code", "cursor", "windsurf"]);
 
 export async function openIde(pr, ide) {
-  const path = await prWorktree(pr);
+  if (pr.headRepo === null) throw new Error("The pull request's source repository is unavailable.");
+  const fork = Boolean(pr.headRepo && pr.repo && pr.headRepo.toLowerCase() !== pr.repo.toLowerCase());
+  const path = await prWorktree({ ...pr, fork });
   const run = async (args) => {
     const r = await exec(ide.cmd, args);
     if (r.code !== 0) throw new Error(r.stderr.trim() || `${ide.cmd} failed`);
@@ -269,35 +270,79 @@ export function forge(url) {
   return /github/.test(host) ? "GitHub" : /gitlab/.test(host) ? "GitLab" : /bitbucket/.test(host) ? "Bitbucket" : host || "Web";
 }
 
-// The PR branch's worktree in its local clone: the one already on that branch, else a new one.
-// `pr`: { clone, branch, ticket, number }. Returns the worktree's path.
-export async function prWorktree({ clone, branch, ticket, number }) {
+// Use the matching checkout on its own machine and reuse any worktree on the branch.
+export async function prWorktree({ clone, branch, ticket, number, on = null, fork = false, headSha, requireCurrentHead = false }) {
+  if (headSha && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(headSha)) throw new Error("Invalid pull request head SHA.");
+  const opts = { on };
+  const execGit = (args) => exec("git", ["-C", clone, ...args], opts);
   const git = async (args) => {
-    const r = await exec("git", ["-C", clone, ...args]);
+    const r = await execGit(args);
     if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").at(-1) || `git ${args[0]} failed`);
     return r.stdout;
   };
   const list = await git(["worktree", "list", "--porcelain"]);
-  const found = list.split("\n\n").map((e) => ({
-    path: e.match(/^worktree (.+)$/m)?.[1],
-    branch: e.match(/^branch refs\/heads\/(.+)$/m)?.[1],
-  })).find((w) => w.branch === branch)?.path;
-  if (found) return found;
-  const slug = (ticket ?? branch).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const worktrees = list.split("\n\n").map((entry) => ({
+    path: entry.match(/^worktree (.+)$/m)?.[1],
+    branch: entry.match(/^branch refs\/heads\/(.+)$/m)?.[1],
+    prunable: /^prunable(?: |$)/m.test(entry),
+  }));
+  const localBranch = fork ? `herdr/pr-${number}` : branch;
+  const existing = worktrees.find((worktree) => !worktree.prunable && worktree.branch === localBranch)?.path;
+  const verifyHead = fork || Boolean(headSha);
+  if (existing && !verifyHead) return existing;
+
+  const tracked = fork ? `refs/herdr/pr/${number}/head` : `refs/remotes/origin/${branch}`;
+  const source = fork ? `refs/pull/${number}/head` : `refs/heads/${branch}`;
+  const localRef = `refs/heads/${localBranch}`;
+  const rev = async (ref) => {
+    const r = await execGit(["rev-parse", "--verify", "--quiet", ref]);
+    return r.code === 0 ? r.stdout.trim() : null;
+  };
+  const local = await rev(localRef);
+  if (verifyHead) {
+    const verifiedRef = `refs/herdr/pr/${number}/verified-head`;
+    const previousHead = local && (await rev(verifiedRef) || (!fork && await rev(tracked)));
+    await git(["fetch", "--no-write-fetch-head", "origin", `+${source}:${tracked}`]);
+    const fetchedHead = await rev(tracked);
+    if (!fetchedHead || (headSha && fetchedHead !== headSha.toLowerCase())) {
+      throw new Error("This PR's head changed on GitHub. Refresh the PR before starting an agent.");
+    }
+    // Reuse only a branch that shares verified PR history. Never discard local commits.
+    const contains = async (ancestor, tip) => (await execGit(["merge-base", "--is-ancestor", ancestor, tip])).code === 0;
+    const includesFetched = local && await contains(fetchedHead, local);
+    if (requireCurrentHead && local && !includesFetched) {
+      throw new Error("The worktree does not include the current PR head. Sync the branch while preserving local work, then retry.");
+    }
+    if (local && !includesFetched && !(!fork && await contains(local, fetchedHead))
+        && !(previousHead && previousHead !== fetchedHead && await contains(previousHead, local))) {
+      throw new Error(`Local branch ${localBranch} diverges from the verified PR history. Review the branch before starting an agent.`);
+    }
+    // Keep the previous anchor while the local branch still has work based on it.
+    if (!local || includesFetched) await git(["update-ref", verifiedRef, fetchedHead]);
+    if (existing) return existing;
+  }
+
+  const main = worktrees[0]?.path ?? clone;
+  const slug = fork ? `pr-${number}` : (ticket ?? branch).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || `pr-${number}`;
   // A repo that ignores .worktrees/ keeps its worktrees there; others go to Herdr's own place.
-  const ignored = (await exec("git", ["-C", clone, "check-ignore", "-q", ".worktrees/x"])).code === 0;
-  const base = ignored ? `${clone}/.worktrees` : `${home()}/.herdr/worktrees/${clone.split("/").pop()}`;
-  const taken = (await exec("test", ["-e", `${base}/${slug}`])).code === 0;
+  const ignored = (await exec("git", ["-C", main, "check-ignore", "-q", ".worktrees/x"], opts)).code === 0;
+  let base = `${main}/.worktrees`;
+  if (!ignored) {
+    const userHome = on ? await exec("sh", ["-c", 'printf "%s" "$HOME"'], opts) : { code: 0, stdout: home() };
+    if (userHome.code !== 0 || !userHome.stdout.trim()) throw new Error("Could not resolve the home folder for the new worktree.");
+    base = `${userHome.stdout.trim()}/.herdr/worktrees/${main.split("/").at(-1)}`;
+  }
+  const taken = (await exec("test", ["-e", `${base}/${slug}`], opts)).code === 0;
   const path = `${base}/${slug}${taken ? `-pr${number}` : ""}`;
-  await git(["fetch", "origin", branch]);
-  const local = (await exec("git", ["-C", clone, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0;
-  await git(local ? ["worktree", "add", path, branch] : ["worktree", "add", "--track", "-b", branch, path, `origin/${branch}`]);
+  if (!verifyHead) await git(["fetch", "origin", source]);
+  if (local) await git(["worktree", "add", path, localBranch]);
+  else await git(["worktree", "add", fork ? "--no-track" : "--track", "-b", localBranch, path, tracked]);
   return path;
 }
 
 // Opens the diff beside the focused pane.
 // `clone`: the local main checkout of the repo, for the IDE button (none: no button).
 export const openDiff = (pr, clone) =>
-  run("pane.split", { direction: "right", mod: "pr-roundup-spaces", props: { diff: {
-    repo: pr.repo, number: pr.number, title: pr.title, url: pr.url, branch: pr.headRefName, base: pr.baseRefName, ticket: pr.ticket, clone: clone ?? null,
+  run("pane.split", { direction: "right", mod: "pr-roundup-ops", props: { diff: {
+    repo: pr.repo, number: pr.number, title: pr.title, url: pr.url, branch: pr.headRefName, base: pr.baseRefName, ticket: pr.ticket, headSha: pr.headSha ?? null, headRepo: pr.headRepo ?? null, clone: clone ?? null,
   } } });

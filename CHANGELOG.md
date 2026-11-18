@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.0 (2026-11-18)
+
+- **PRs move to the right panel.** Opening the panel selects the active space’s GitHub repository. The left sidebar uses Herdr’s built-in Spaces and Agents lists.
+- **Lower GitHub API usage.** The panel batches lightweight summaries, caches them for five minutes, and stops polling when hidden. It loads review comments and files when you expand a PR. If the GraphQL quota runs out, the panel uses REST until the reported reset.
+- **Agent tabs land in the matching space.** The launcher uses live checkouts to find the PR’s repository and prepares a worktree on the destination space’s machine.
+- **New screenshots** show the PR panel, agent picker, and source diff using fictional workspaces and repositories.
+
 ## v0.4.1 (2026-11-06)
 
 ### Fix
